@@ -23,15 +23,27 @@ char logFileName[13];
 
 // Structure for Powertrain CAN Data
 struct CANSensorData {
-  int batSoc = 100;
+  int batSoc = 100; // change to zero?
   int batMaxTemp = 25;
   int batAvgTemp = 22;
+  int batMinTemp = 22;
   int batCurrent = 15;
   int batImbalance = 5;
   int batVolt = 400;
   int motorRpm = 0;
   int motorTemp = 45;
   int invTemp = 40;
+  int lowCellVolt = 10;
+  int highCellVolt = 15;
+  int xAccel = 0;
+  int yAccel = 0;
+  int zAccel = 0;
+  int rollGyro = 0;
+  int pitchGyro = 0;
+  int yawGyro = 0;
+  int rollAngle = 0;
+  int pitchAngle = 0;
+  int yawAngle = 0;
 } dashData;
 
 // --- Timing Variables ---
@@ -42,6 +54,16 @@ const int DISPLAY_RATE_MS = 100;  // 10Hz Display refresh rate
 
 void setup() {
   Serial.begin(115200);
+  Serial.println("Starting CAN Sniffer...");
+  
+  // 2. Initialize CAN Bus
+  if (CAN.begin(MCP_ANY, CAN_500KBPS, MCP_16MHZ) == CAN_OK) {
+    Serial.println("CAN Init SUCCESS!");
+    CAN.setMode(MCP_NORMAL);
+  } else {
+    Serial.println("CAN Init FAILED! - Check CS Pin (10) and Shield Connection");
+    while (1); // Freeze the Arduino here so you know it's broken
+  }
 
   pinMode(CAN_INT_PIN, INPUT_PULLUP);
 
@@ -60,17 +82,13 @@ void setup() {
     // Create that specific file and write the master header
     File dataLog = SD.open(logFileName, FILE_WRITE);
     if (dataLog) {
-      dataLog.println("Time_ms,T1_Raw,T2_Raw,B1_Raw,B2_Raw,Susp1_Raw,Susp2_Raw,Bat_SOC_%,Bat_Max_C,Bat_Avg_C,Bat_Amps,Bat_Volts,Motor_RPM,Motor_C,Inv_C,Bat_Imbal");
+dataLog.println("Time_ms,T1_Raw,T2_Raw,B1_Raw,B2_Raw,Susp1_Raw,Susp2_Raw,Bat_SOC_%,Bat_Max_C,Bat_Avg_C,Bat_Amps,Bat_Volts,Motor_RPM,Motor_C,Inv_C,Bat_Imbal,X_accel,Y_accel,Z_accel,X_gyro,Y_gyro,Z_gyro,Roll_Angle,Pitch_Angle,Yaw_Angle");
       dataLog.close();
       sdReady = true;
     }
   }
 
 
-  // Initialize CAN Bus
-  if (CAN.begin(MCP_ANY, CAN_500KBPS, MCP_8MHZ) == CAN_OK) {  //Varify this is 500KBPS
-    CAN.setMode(MCP_NORMAL);
-  }
 
   delay(1000);  // Let Nextion boot
 }
@@ -91,11 +109,15 @@ void loop() {
 
   // Read CAN Bus
 
-  if (!digitalRead(CAN_INT_PIN)) {
+  if (CAN.checkReceive() == CAN_MSGAVAIL) { 
+    
     long unsigned int rxId;
     unsigned char len = 0;
     unsigned char rxBuf[8];
     CAN.readMsgBuf(&rxId, &len, rxBuf);
+    
+    //Serial.print("Received CAN ID: 0x");
+    //Serial.println(rxId, HEX);
 
     switch (rxId) {  //Default CAN ID's (are they different?)
       // --- ORION BMS ---
@@ -103,11 +125,19 @@ void loop() {
         dashData.batCurrent = ((rxBuf[0] << 8) | rxBuf[1]) / 10;
         dashData.batVolt = ((rxBuf[2] << 8) | rxBuf[3]) / 10;
         dashData.batSoc = rxBuf[4];
+        //relay state 5
+        // pack health 6
         break;
 
       case 0x6B1:
-        dashData.batMaxTemp = rxBuf[4];
-        dashData.batAvgTemp = rxBuf[5];
+        dashData.batAvgTemp = rxBuf[0];//avg temp 0
+        dashData.lowCellVolt = rxBuf[2];//low cell voltage 2
+        dashData.highCellVolt = rxBuf[3];//high cell volage 3
+    
+     
+      
+        dashData.batMaxTemp = rxBuf[4];//high temp 4
+        dashData.batMinTemp = rxBuf[5];//low temp 5
         break;
 
       // --- DTI INVERTER ---
@@ -124,6 +154,25 @@ void loop() {
           dashData.motorTemp = ((rxBuf[2] << 8) | rxBuf[3]) / 10;
         }
         break;
+
+      case 0x100:
+        dashData.xAccel = (rxBuf[0] << 8) | rxBuf[1];
+        dashData.yAccel = (rxBuf[2] << 8) | rxBuf[3];
+        dashData.zAccel = (rxBuf[4] << 8) | rxBuf[5];  // Acceleration XYZ
+      break;
+        
+      case 0x101:
+        dashData.rollGyro = (rxBuf[0] << 8) | rxBuf[1];
+        dashData.pitchGyro = (rxBuf[2] << 8) | rxBuf[3];
+        dashData.yawGyro = (rxBuf[4] << 8) | rxBuf[5]; // Gyroscope
+      break;
+      
+      case 0x102:
+        dashData.rollAngle = (rxBuf[0] << 8) | rxBuf[1];
+        dashData.pitchAngle = (rxBuf[2] << 8) | rxBuf[3];
+        dashData.yawAngle =  (rxBuf[4] << 8) | rxBuf[5]; // Angle
+      break;
+
     }
   }
 
@@ -175,8 +224,25 @@ void loop() {
         dataLog.print(",");
         dataLog.print(dashData.invTemp);
         dataLog.print(",");
-        dataLog.println(dashData.batImbalance);
-
+        dataLog.print(dashData.batImbalance); 
+        dataLog.print(",");
+        dataLog.print(dashData.xAccel);       
+        dataLog.print(",");
+        dataLog.print(dashData.yAccel);     
+        dataLog.print(",");
+        dataLog.print(dashData.zAccel);      
+        dataLog.print(",");
+        dataLog.print(dashData.rollGyro);   
+        dataLog.print(",");
+        dataLog.print(dashData.pitchGyro);   
+        dataLog.print(",");
+        dataLog.print(dashData.yawGyro);    
+        dataLog.print(",");
+        dataLog.print(dashData.rollAngle);    
+        dataLog.print(",");
+        dataLog.print(dashData.pitchAngle);     
+        dataLog.print(",");
+        dataLog.println(dashData.yawAngle);   
         dataLog.close();
       }
     }
@@ -188,14 +254,15 @@ void loop() {
   if (currentTime - lastDisplayTime >= DISPLAY_RATE_MS) {
     lastDisplayTime = currentTime;
 
-    sendNextionText("batPct", String(dashData.batSoc));
-    sendNextionText("batMaxTemp", String(dashData.batMaxTemp));
-    sendNextionText("batAvgTemp", String(dashData.batAvgTemp));
-    sendNextionText("batCurrent", String(dashData.batCurrent));
-    sendNextionText("batVolt", String(dashData.batVolt));
-    sendNextionText("rpm", String(dashData.motorRpm));
+    sendNextionText("batPct", String(dashData.batSoc));//
+    sendNextionText("batMaxTemp", String(dashData.batMaxTemp));//
+    sendNextionText("batMinTemp", String(dashData.batMinTemp));//
+    sendNextionText("avgCellTemp", String(dashData.batAvgTemp));//
+    sendNextionText("batCurrent", String(dashData.batCurrent));//
+    sendNextionText("batVolt", String(dashData.batVolt));//
+    sendNextionText("rpm", String(dashData.motorRpm)); //
     sendNextionText("motTemp", String(dashData.motorTemp));
-    sendNextionText("invTemp", String(dashData.invTemp));
-    sendNextionText("batImbalance", String(dashData.batImbalance));
+    sendNextionText("invTemp", String(dashData.invTemp));//
+    sendNextionText("batImbalance", String((dashData.batMaxTemp)-(dashData.batMinTemp)));
   }
 }
