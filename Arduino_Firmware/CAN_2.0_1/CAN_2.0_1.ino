@@ -3,38 +3,26 @@
 #include <SD.h>
 
 // DTI Inverter config
-#define DTI_POLE_PAIRS   10
-#define DTI_EXTENDED_ID  true   // confirmed: Commander uses extended IDs, (packetId<<8)|nodeId
-#define DTI_NODE_ID      0x13   // confirmed: Node ID = 19 (0x13) from Commander sketch
+#define DTI_POLE_PAIRS   (10)
+#define DTI_EXTENDED_ID  (true)   // confirmed: Commander uses extended IDs, (packetId<<8)|nodeId
+#define DTI_NODE_ID      (0x13)   // confirmed: Node ID = 19 (0x13) from Commander sketch
 
 // Pin Definitions
-const int CAN_CS_PIN       = 10;
-const int SD_CS_PIN        = 9;
-const int CAN_INT_PIN      = 2;
-//const int BRAKE_LIGHT_PIN  = 3;  // *** REVIEW
+#define CAN_CS_PIN              (10) // CAN CS pin
+#define CAN_INT_PIN             (2)  // Interrupt pin for CAN bus
+#define SD_CS_PIN               (9)  // SD card CS pin
+#define RTD_PLAUSIBILITY_PIN    (3)  // Input from RTD for APPS/Brake plausibility check
+#define PRECHARGE_PRECHARGE_PIN (4)  // Output to precharge board to indicate precharge completion
+#define PRECHARGE_RTD_PIN       (5)  // Output to RTD to indicate precharge completion
 
-// Analog Sensor Pins
-const int THROTTLE_1_PIN = A0;
-const int THROTTLE_2_PIN = A1;
-const int BRAKE_1_PIN    = A2;
-const int BRAKE_2_PIN    = A3;
-const int SUSP_1_PIN     = A4;
-const int SUSP_2_PIN     = A5;
-
-// APPS / Brake plausibility thresholds (ADC counts, 10-bit = 0-1023)
-// Brake light: ON when average brake ADC > 80% of full scale
-// APPS fault:  latch when APPS > 25%, clear when APPS < 5%
-const int BRAKE_ON_THRESHOLD    = (int)(0.80 * 1023);  // *** REVIEW
-const int APPS_FAULT_THRESHOLD  = (int)(0.25 * 1023);  // 25% pedal travel
-const int APPS_CLEAR_THRESHOLD  = (int)(0.05 * 1023);  // 5%  pedal travel
+// Precharge Constants
+#define PRECHARGE_THRESHOLD_PRECHARGE (0.92) // Percentage to send signal to precharge board
+#define PRECHARGE_THRESHOLD_RTD       (0.97) // Percentage to send signal to RTD
 
 MCP_CAN CAN(CAN_CS_PIN);
 bool sdReady = false;
 
 char logFileName[13];
-
-// APPS/Brake plausibility latch
-bool appsBrakeFaultLatched = false;
 
 // Sensor Data Structure
 struct CANSensorData {
@@ -131,8 +119,11 @@ int32_t parseInt32BE(unsigned char* buf, int offset) {
 // ---- DTI Drive Enable command ----
 // Sends DTI packet 0x0C: byte0 = 1 (enable) or 0 (disable)
 void sendDriveEnable(bool enable) {
-  unsigned char payload[8] = { (uint8_t)(enable ? 1 : 0),
-                                0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+  unsigned char payload[8] = {
+    (uint8_t)(enable ? 1 : 0),
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+  };
+
   uint32_t canId;
   if (DTI_EXTENDED_ID) {
     canId = ((uint32_t)0x0C << 8) | DTI_NODE_ID;
@@ -147,11 +138,16 @@ void sendDriveEnable(bool enable) {
 // ---- Setup ----
 
 void setup() {
-  pinMode(SD_CS_PIN,      OUTPUT);
+  pinMode(RTD_PLAUSIBILITY_PIN, INPUT);
+
+  pinMode(SD_CS_PIN, OUTPUT);
   digitalWrite(SD_CS_PIN, HIGH);
 
- // pinMode(BRAKE_LIGHT_PIN, OUTPUT);
-  //digitalWrite(BRAKE_LIGHT_PIN, LOW);
+  pinMode(PRECHARGE_PRECHARGE_PIN, OUTPUT);
+  digitalWrite(PRECHARGE_PRECHARGE_PIN, LOW);
+
+  pinMode(PRECHARGE_RTD_PIN, OUTPUT);
+  digitalWrite(PRECHARGE_RTD_PIN, LOW);
 
  // Serial.begin(115200);
 
@@ -182,8 +178,7 @@ void setup() {
       if (dataLog) {
         dataLog.println(F(
           "Time_ms,"
-          "T1_Raw,T2_Raw,B1_Raw,B2_Raw,Susp1_Raw,Susp2_Raw,"
-          "APPS_BrakeFault,"
+          "Inverter_Enabled,"
           "Bat_SOC_%,Bat_Max_C,Bat_Avg_C,Bat_Min_C,Bat_Amps,Bat_Volts,LowCell_V,HighCell_V,"
           "X_Accel,Y_Accel,Z_Accel,Roll_Gyro,Pitch_Gyro,Yaw_Gyro,Roll_Angle,Pitch_Angle,Yaw_Angle,"
           "DTI_ControlMode,DTI_TargetIq_Apk,DTI_MotorPos_deg,DTI_IsMotorStill,"
@@ -340,63 +335,28 @@ void loop() {
         break;
     }
   }
+  
+  // APPS to brake plausibility check input from RTD
+  bool enableInverter = digitalRead(RTD_PLAUSIBILITY_PIN) == HIGH;
+  sendDriveEnable(enableInverter);
 
-  // ---- Read analog sensors ----
-  int t1    = analogRead(THROTTLE_1_PIN);
-  int t2    = analogRead(THROTTLE_2_PIN);
-  int b1    = analogRead(BRAKE_1_PIN);
-  int b2    = analogRead(BRAKE_2_PIN);
-  int susp1 = analogRead(SUSP_1_PIN);
-  int susp2 = analogRead(SUSP_2_PIN);
-
-  int appsAvg  = (t1 + t2) / 2;
-  int brakeAvg = (b1 + b2) / 2;
-
-  // ---- Brake Light ----
-
- // if (brakeAvg > BRAKE_ON_THRESHOLD) {
-//    digitalWrite(BRAKE_LIGHT_PIN, HIGH);
- // } else {
-//    digitalWrite(BRAKE_LIGHT_PIN, LOW);
-//  }
-
-  // ---- APPS / Brake Plausibility Check (FSAE EV.4.7) ----
-  // Latch fault when brakes engaged AND APPS > 25%
-  bool brakeEngaged = (brakeAvg > BRAKE_ON_THRESHOLD);
-
-  if (brakeEngaged && appsAvg > APPS_FAULT_THRESHOLD) {
-    appsBrakeFaultLatched = true;
-  }
-  // Clear latch only when APPS drops below 5%
-  if (appsBrakeFaultLatched && appsAvg < APPS_CLEAR_THRESHOLD) {
-    appsBrakeFaultLatched = false;
-  }
-
-  // Send DTI drive enable/disable based on latch state
-  if (appsBrakeFaultLatched) {
-    sendDriveEnable(false);  // Immediately cut motor power
-  } else {
-    sendDriveEnable(true);   // Normal operation — allow drive
-  }
+  // Precharge completion calculations
+  double prechargePercentage = dashData.dtiInputVoltage / dashData.batVolt;
+  digitalWrite(PRECHARGE_PRECHARGE_PIN, (prechargePercentage > PRECHARGE_THRESHOLD_PRECHARGE) ? HIGH : LOW);
+  digitalWrite(PRECHARGE_RTD_PIN, (prechargePercentage > PRECHARGE_THRESHOLD_RTD) ? HIGH : LOW);
 
   // ---- SD Logging at 50 Hz ----
   if (currentTime - lastLogTime >= LOG_RATE_MS) {
-    lastLogTime = currentTime;
+    lastLogTime += LOG_RATE_MS;
 
     if (sdReady) {
       File dataLog = SD.open(logFileName, FILE_WRITE);
       if (dataLog) {
 
         dataLog.print(currentTime);           dataLog.print(",");
-        dataLog.print(t1);                    dataLog.print(",");
-        dataLog.print(t2);                    dataLog.print(",");
-        dataLog.print(b1);                    dataLog.print(",");
-        dataLog.print(b2);                    dataLog.print(",");
-        dataLog.print(susp1);                 dataLog.print(",");
-        dataLog.print(susp2);                 dataLog.print(",");
 
-        // APPS/Brake fault flag
-        dataLog.print(appsBrakeFaultLatched ? 1 : 0); dataLog.print(",");
+        // APPS to brake plausibility
+        dataLog.print(enableInverter ? 1 : 0); dataLog.print(",");
 
         // BMS
         dataLog.print(dashData.batSoc);       dataLog.print(",");
@@ -492,7 +452,7 @@ void loop() {
 
   // ---- Nextion Display at 10 Hz ----
   if (currentTime - lastDisplayTime >= DISPLAY_RATE_MS) {
-    lastDisplayTime = currentTime;
+    lastDisplayTime += DISPLAY_RATE_MS;
 
     sendNextionText("batPct",      String(dashData.batSoc));
     sendNextionText("batMaxTemp",  String(dashData.batMaxTemp));
