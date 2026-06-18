@@ -32,8 +32,8 @@ struct CANSensorData {
   int batMaxTemp   = 0;
   int batAvgTemp   = 0;
   int batMinTemp   = 0;
-  int batCurrent   = 0;
-  int batVolt      = 0;
+  float batCurrent = 0.0;
+  float batVolt    = 0.0;
   int lowCellVolt  = 0;
   int highCellVolt = 0;
 
@@ -244,8 +244,8 @@ void loop() {
     // ---- BMS (Orion) ----
     switch (rxId) {
       case 0x6B0:
-        dashData.batCurrent  = parseInt16BE(rxBuf, 0) / 10;
-        dashData.batVolt     = parseUint16BE(rxBuf, 2) / 10;
+        dashData.batCurrent  = parseInt16BE(rxBuf, 0) / 10.0;
+        dashData.batVolt     = parseUint16BE(rxBuf, 2) / 10.0;
         dashData.batSoc      = rxBuf[4];
         break;
 
@@ -359,14 +359,14 @@ void loop() {
         dataLog.print(enableInverter ? 1 : 0); dataLog.print(",");
 
         // BMS
-        dataLog.print(dashData.batSoc);       dataLog.print(",");
-        dataLog.print(dashData.batMaxTemp);   dataLog.print(",");
-        dataLog.print(dashData.batAvgTemp);   dataLog.print(",");
-        dataLog.print(dashData.batMinTemp);   dataLog.print(",");
-        dataLog.print(dashData.batCurrent);   dataLog.print(",");
-        dataLog.print(dashData.batVolt);      dataLog.print(",");
-        dataLog.print(dashData.lowCellVolt);  dataLog.print(",");
-        dataLog.print(dashData.highCellVolt); dataLog.print(",");
+        dataLog.print(dashData.batSoc);        dataLog.print(",");
+        dataLog.print(dashData.batMaxTemp);    dataLog.print(",");
+        dataLog.print(dashData.batAvgTemp);    dataLog.print(",");
+        dataLog.print(dashData.batMinTemp);    dataLog.print(",");
+        dataLog.print(dashData.batCurrent, 2); dataLog.print(",");
+        dataLog.print(dashData.batVolt, 2);    dataLog.print(",");
+        dataLog.print(dashData.lowCellVolt);   dataLog.print(",");
+        dataLog.print(dashData.highCellVolt);  dataLog.print(",");
 
         // IMU
         dataLog.print(dashData.xAccel);       dataLog.print(",");
