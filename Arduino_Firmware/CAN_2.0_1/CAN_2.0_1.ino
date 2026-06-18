@@ -12,8 +12,8 @@
 #define CAN_INT_PIN             (2)  // Interrupt pin for CAN bus
 #define SD_CS_PIN               (9)  // SD card CS pin
 #define RTD_PLAUSIBILITY_PIN    (3)  // Input from RTD for APPS/Brake plausibility check
-#define PRECHARGE_PRECHARGE_PIN (4)  // Output to precharge board to indicate precharge completion
-#define PRECHARGE_RTD_PIN       (5)  // Output to RTD to indicate precharge completion
+#define PRECHARGE_PRECHARGE_PIN (5)  // Output to precharge board to indicate precharge completion
+#define PRECHARGE_RTD_PIN       (7)  // Output to RTD to indicate precharge completion
 
 // Precharge Constants
 #define PRECHARGE_THRESHOLD_PRECHARGE (0.92) // Percentage to send signal to precharge board
@@ -92,10 +92,13 @@ struct CANSensorData {
 
 
 // Timing
-unsigned long lastLogTime     = 0;
-unsigned long lastDisplayTime = 0;
-const int LOG_RATE_MS     = 20;   // 50 Hz
-const int DISPLAY_RATE_MS = 100;  // 10 Hz
+unsigned long lastLogTime            = 0;
+unsigned long lastDisplayTime        = 0;
+unsigned long lastInverterEnableTime = 0;
+#define LOG_RATE_MS             (20)  // 50 Hz
+#define DISPLAY_RATE_MS         (100) // 10 Hz
+#define INVERTER_ENABLE_RATE_MS (10)  // 100 Hz
+bool lastInverterEnableState = false;
 
 
 // ---- Big-endian decode helpers ----
@@ -151,13 +154,12 @@ void setup() {
 
  // Serial.begin(115200);
 
-  if (CAN.begin(MCP_ANY, CAN_500KBPS, MCP_16MHZ) == CAN_OK) {
-  //  Serial.println("CAN Init OK");
-    CAN.setMode(MCP_NORMAL);
-  } else {
-//    Serial.println("CAN Init FAILED - Check CS Pin and wiring");
-    while (1);
+  while (CAN.begin(MCP_ANY, CAN_500KBPS, MCP_16MHZ) != CAN_OK) {
+    delay(100);
+    // Serial.println("CAN Init FAILED - Check CS Pin and wiring");
   }
+  // Serial.println("CAN Init OK");
+  CAN.setMode(MCP_NORMAL);
 
   pinMode(CAN_INT_PIN, INPUT_PULLUP);
 
@@ -337,8 +339,18 @@ void loop() {
   }
   
   // APPS to brake plausibility check input from RTD
-  bool enableInverter = digitalRead(RTD_PLAUSIBILITY_PIN) == HIGH;
-  sendDriveEnable(enableInverter);
+  bool currentInverterEnableState = digitalRead(RTD_PLAUSIBILITY_PIN) == HIGH;
+  // If enable status changes, notify immediately
+  if (currentInverterEnableState != lastInverterEnableState) {
+    lastInverterEnableTime = currentTime;
+    sendDriveEnable(currentInverterEnableState);
+  }
+  // Otherwise, notify at 100 Hz
+  else if (currentTime - lastInverterEnableTime >= INVERTER_ENABLE_RATE_MS) {
+    lastInverterEnableTime += INVERTER_ENABLE_RATE_MS;
+    sendDriveEnable(currentInverterEnableState);
+  }
+  lastInverterEnableState = currentInverterEnableState;
 
   // Precharge completion calculations
   double prechargePercentage = dashData.dtiInputVoltage / dashData.batVolt;
@@ -356,7 +368,7 @@ void loop() {
         dataLog.print(currentTime);           dataLog.print(",");
 
         // APPS to brake plausibility
-        dataLog.print(enableInverter ? 1 : 0); dataLog.print(",");
+        dataLog.print(currentInverterEnableState ? 1 : 0); dataLog.print(",");
 
         // BMS
         dataLog.print(dashData.batSoc);        dataLog.print(",");
