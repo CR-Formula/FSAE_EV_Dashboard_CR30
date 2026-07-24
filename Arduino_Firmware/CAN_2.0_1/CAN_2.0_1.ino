@@ -213,10 +213,20 @@ void setup() {
 
 
 // ---- Nextion helpers ----
-void sendNextionText(const char* component, const char* value) {
+void nextionInt(const char* component, long value) {
   Serial.print(component);
   Serial.print(F(".txt=\""));
   Serial.print(value);
+  Serial.print('"');
+  Serial.write(0xFF);
+  Serial.write(0xFF);
+  Serial.write(0xFF);
+}
+
+void nextionFloat(const char* component, float value, int decimals) {
+  Serial.print(component);
+  Serial.print(F(".txt=\""));
+  Serial.print(value, decimals);
   Serial.print('"');
   Serial.write(0xFF);
   Serial.write(0xFF);
@@ -466,21 +476,21 @@ void loop() {
   if (currentTime - lastDisplayTime >= DISPLAY_RATE_MS) {
     lastDisplayTime += DISPLAY_RATE_MS;
 
-    sendNextionText("invVolt",    dashData.dtiInputVoltage);
-    sendNextionText("batVolt",    dashData.batVolt);
-    sendNextionText("motTemp",    dashData.dtiMotorTemp);
-    sendNextionText("batMaxTemp", dashData.batMaxTemp);
-    sendNextionText("invTemp",    dashData.dtiCtrlTemp);
+    nextionFloat("invVolt",    dashData.dtiInputVoltage, 0);
+    nextionInt("batVolt",      dashData.batVolt);
+    nextionFloat("motTemp",    dashData.dtiMotorTemp, 0);
+    nextionInt("batMaxTemp",   dashData.batMaxTemp);
+    nextionFloat("invTemp",    dashData.dtiCtrlTemp, 0);
 
-    sendNextionText("batPct",      dashData.batSoc);
-    sendNextionText("batMinTemp",  dashData.batMinTemp);
-    sendNextionText("avgCellTemp", dashData.batAvgTemp);
-    sendNextionText("batCurrent",  dashData.batCurrent);
-    sendNextionText("rpm",         dashData.dtiErpm / DTI_POLE_PAIRS);
-    sendNextionText("batImbalance",dashData.highCellVolt - dashData.lowCellVolt);
-    sendNextionText("dcCurrent",   dashData.dtiDcCurrent);
-    sendNextionText("availDC",     dashData.dtiAvailMaxDc);
-    sendNextionText("faultCode",   dashData.dtiFaultCode);
+    nextionInt("batPct",      dashData.batSoc);
+    nextionInt("batMinTemp",  dashData.batMinTemp);
+    nextionInt("avgCellTemp", dashData.batAvgTemp);
+    nextionInt("batCurrent",  dashData.batCurrent);
+    nextionInt("rpm",         dashData.dtiErpm / DTI_POLE_PAIRS);
+    nextionInt("batImbalance",dashData.highCellVolt - dashData.lowCellVolt);
+    nextionFloat("dcCurrent", dashData.dtiDcCurrent, 0);
+    nextionFloat("availDC",   dashData.dtiAvailMaxDc, 0);
+    nextionInt("faultCode",   dashData.dtiFaultCode);
 
     // sendNextionText("batPct",      String(dashData.batSoc));
     // sendNextionText("batMaxTemp",  String(dashData.batMaxTemp));
