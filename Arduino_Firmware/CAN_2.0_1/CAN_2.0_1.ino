@@ -212,12 +212,12 @@ void setup() {
 }
 
 
-// ---- Nextion helper ----
-void sendNextionText(const char* component, String value) {
+// ---- Nextion helpers ----
+void sendNextionText(const char* component, const char* value) {
   Serial.print(component);
-  Serial.print(".txt=\"");
+  Serial.print(F(".txt=\""));
   Serial.print(value);
-  Serial.print("\"");
+  Serial.print('"');
   Serial.write(0xFF);
   Serial.write(0xFF);
   Serial.write(0xFF);
@@ -466,15 +466,31 @@ void loop() {
   if (currentTime - lastDisplayTime >= DISPLAY_RATE_MS) {
     lastDisplayTime += DISPLAY_RATE_MS;
 
-    sendNextionText("batPct",      String(dashData.batSoc));
-    sendNextionText("batMaxTemp",  String(dashData.batMaxTemp));
-    sendNextionText("batMinTemp",  String(dashData.batMinTemp));
-    sendNextionText("avgCellTemp", String(dashData.batAvgTemp));
-    sendNextionText("batCurrent",  String(dashData.batCurrent));
-    sendNextionText("batVolt",     String(dashData.batVolt));
-    sendNextionText("rpm",         String(dashData.dtiErpm / DTI_POLE_PAIRS));
-    sendNextionText("motTemp",     String(dashData.dtiMotorTemp));
-    sendNextionText("invTemp",     String(dashData.dtiCtrlTemp));
-    sendNextionText("batImbalance",String(dashData.batMaxTemp - dashData.batMinTemp));
+    sendNextionText("invVolt",    dashData.dtiInputVoltage);
+    sendNextionText("batVolt",    dashData.batVolt);
+    sendNextionText("motTemp",    dashData.dtiMotorTemp);
+    sendNextionText("batMaxTemp", dashData.batMaxTemp);
+    sendNextionText("invTemp",    dashData.dtiCtrlTemp);
+
+    sendNextionText("batPct",      dashData.batSoc);
+    sendNextionText("batMinTemp",  dashData.batMinTemp);
+    sendNextionText("avgCellTemp", dashData.batAvgTemp);
+    sendNextionText("batCurrent",  dashData.batCurrent);
+    sendNextionText("rpm",         dashData.dtiErpm / DTI_POLE_PAIRS);
+    sendNextionText("batImbalance",dashData.highCellVolt - dashData.lowCellVolt);
+    sendNextionText("dcCurrent",   dashData.dtiDcCurrent);
+    sendNextionText("availDC",     dashData.dtiAvailMaxDc);
+    sendNextionText("faultCode",   dashData.dtiFaultCode);
+
+    // sendNextionText("batPct",      String(dashData.batSoc));
+    // sendNextionText("batMaxTemp",  String(dashData.batMaxTemp));
+    // sendNextionText("batMinTemp",  String(dashData.batMinTemp));
+    // sendNextionText("avgCellTemp", String(dashData.batAvgTemp));
+    // sendNextionText("batCurrent",  String(dashData.batCurrent));
+    // sendNextionText("batVolt",     String(dashData.batVolt));
+    // sendNextionText("rpm",         String(dashData.dtiErpm / DTI_POLE_PAIRS));
+    // sendNextionText("motTemp",     String(dashData.dtiMotorTemp));
+    // sendNextionText("invTemp",     String(dashData.dtiCtrlTemp));
+    // sendNextionText("batImbalance",String(dashData.batMaxTemp - dashData.batMinTemp));
   }
 }
